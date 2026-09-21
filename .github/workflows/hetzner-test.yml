@@ -1,0 +1,25 @@
+name: Hetzner API Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "=== TEST 1: Check Secret ==="
+          if [ -z "${{ secrets.HETZNER_TOKEN }}" ]; then
+            echo "ERROR: Secret is empty!"
+            exit 1
+          fi
+          echo "OK: Secret exists"
+          
+      - run: |
+          echo "=== TEST 2: Call API ==="
+          curl -s -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" https://dns.hetzner.com/api/v1/zones
+          
+      - run: |
+          echo ""
+          echo "=== TEST 3: Search ob5.dev ==="
+          curl -s -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" "https://dns.hetzner.com/api/v1/zones?name=ob5.dev"
