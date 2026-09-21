@@ -1,0 +1,24 @@
+name: Verbose Hetzner Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "=== TEST 2: Verbose API Call ==="
+          curl -v -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" https://dns.hetzner.com/api/v1/zones 2>&1 | tee /tmp/curl.log
+          echo ""
+          echo "=== Curl Exit Code ==="
+          echo $?
+          
+      - run: |
+          echo "=== TEST 3: With Error Capture ==="
+          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" https://dns.hetzner.com/api/v1/zones 2>&1)
+          echo "$RESPONSE"
+          
+      - run: |
+          echo "=== TEST 4: ob5.dev Search ==="
+          curl -v -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" "https://dns.hetzner.com/api/v1/zones?name=ob5.dev" 2>&1 | head -50
