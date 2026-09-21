@@ -1,0 +1,22 @@
+name: Hetzner Cloud DNS API Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "=== Test 1: Cloud API base ==="
+          curl -s -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" https://api.hetzner.cloud/v1/dns/zones | head -c 500
+          
+      - run: |
+          echo ""
+          echo "=== Test 2: List DNS zones ==="
+          curl -s -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" https://api.hetzner.cloud/v1/dns/zones | python3 -m json.tool 2>/dev/null || curl -s -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" https://api.hetzner.cloud/v1/dns/zones
+          
+      - run: |
+          echo ""
+          echo "=== Test 3: Search ob5.dev ==="
+          curl -s -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" "https://api.hetzner.cloud/v1/dns/zones?name=ob5.dev" | python3 -m json.tool 2>/dev/null || curl -s -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" "https://api.hetzner.cloud/v1/dns/zones?name=ob5.dev"
