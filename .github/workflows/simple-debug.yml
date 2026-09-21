@@ -1,0 +1,19 @@
+name: Simple Debug Output
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Zones
+        env:
+          HETZNER_TOKEN: "FxSS691YDR3ifdOKpc6DYn46jYs3UkEcQL4Rj9b5FjJwR91Lvrl19H1xw9MrEZhS"
+        run: |
+          echo ">>> ALLE ZONES <<<"
+          curl -s -H "Auth-API-Token: $HETZNER_TOKEN" https://dns.hetzner.com/api/v1/zones | python3 -m json.tool 2>/dev/null || curl -s -H "Auth-API-Token: $HETZNER_TOKEN" https://dns.hetzner.com/api/v1/zones
+          
+          echo ""
+          echo ">>> OB5.DEV SPEZIFISCH <<<"
+          curl -s -H "Auth-API-Token: $HETZNER_TOKEN" "https://dns.hetzner.com/api/v1/zones?name=ob5.dev" | python3 -m json.tool 2>/dev/null || curl -s -H "Auth-API-Token: $HETZNER_TOKEN" "https://dns.hetzner.com/api/v1/zones?name=ob5.dev"
