@@ -1,0 +1,43 @@
+name: Manual DNS Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      subdomain:
+        description: 'Subdomain (z.B. prototype)'
+        required: true
+      domain:
+        description: 'Domain (z.B. ob5.dev)'
+        required: true
+
+jobs:
+  dns:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup DNS
+        env:
+          HETZNER_TOKEN: "FxSS691YDR3ifdOKpc6DYn46jYs3UkEcQL4Rj9b5FjJwR91Lvrl19H1xw9MrEZhS"
+        run: |
+          echo "Getting Zone ID for ${{ inputs.domain }}..."
+          ZONE_ID=$(curl -s -H "Auth-API-Token: $HETZNER_TOKEN" "https://dns.hetzner.com/api/v1/zones?name=${{ inputs.domain }}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+          echo "Zone ID: $ZONE_ID"
+          
+          if [ -z "$ZONE_ID" ]; then
+            echo "❌ Zone nicht gefunden"
+            exit 1
+          fi
+          
+          echo "Setting CNAME: ${{ inputs.subdomain }} → wbgrds.github.io"
+          curl -X POST -H "Auth-API-Token: $HETZNER_TOKEN" \
+            -H "Content-Type: application/json" \
+            https://dns.hetzner.com/api/v1/records \
+            -d "{
+              \"type\": \"CNAME\",
+              \"name\": \"${{ inputs.subdomain }}\",
+              \"value\": \"wbgrds.github.io\",
+              \"zone_id\": \"$ZONE_ID\",
+              \"ttl\": 3600
+            }"
+          
+          echo ""
+          echo "✅ DNS konfiguriert"
