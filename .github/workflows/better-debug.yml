@@ -1,0 +1,23 @@
+name: Debug Hetzner Detailed
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Hetzner API - Full Output
+        env:
+          HETZNER_TOKEN: "FxSS691YDR3ifdOKpc6DYn46jYs3UkEcQL4Rj9b5FjJwR91Lvrl19H1xw9MrEZhS"
+        run: |
+          echo "====== TEST 1: AUTH & RATE LIMITS ======"
+          curl -s -I -H "Auth-API-Token: $HETZNER_TOKEN" https://dns.hetzner.com/api/v1/zones
+          
+          echo ""
+          echo "====== TEST 2: ALLE ZONES ======"
+          curl -s -H "Auth-API-Token: $HETZNER_TOKEN" https://dns.hetzner.com/api/v1/zones | jq . 2>/dev/null || curl -s -H "Auth-API-Token: $HETZNER_TOKEN" https://dns.hetzner.com/api/v1/zones
+          
+          echo ""
+          echo "====== TEST 3: SPEZIFISCH ob5.dev ======"
+          curl -s -H "Auth-API-Token: $HETZNER_TOKEN" "https://dns.hetzner.com/api/v1/zones?name=ob5.dev" | jq . 2>/dev/null || curl -s -H "Auth-API-Token: $HETZNER_TOKEN" "https://dns.hetzner.com/api/v1/zones?name=ob5.dev"
