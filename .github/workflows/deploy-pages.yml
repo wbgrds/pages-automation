@@ -6,151 +6,70 @@ on:
       subdomain:
         description: 'Subdomain (z.B. prototype)'
         required: true
-        type: string
       domain:
         description: 'Domain (z.B. ob5.dev)'
         required: true
-        type: string
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-      - name: 📋 Setup
+      - name: "📋 Setup"
+        id: setup
         run: |
-          # Domain reverse: ob5.dev -> dev.ob5.prototype
-          DOMAIN_PARTS=$(echo "${{ inputs.domain }}" | tr '.' ' ')
-          REPO_NAME=$(echo $DOMAIN_PARTS | awk '{print $NF}' FS=' ')
-          for part in $(echo $DOMAIN_PARTS | tr ' ' '
-' | tac); do
-            REPO_NAME="${part}.${REPO_NAME}"
-          done
-          REPO_NAME="${REPO_NAME}.${{ inputs.subdomain }}"
-          REPO_NAME=$(echo "$REPO_NAME" | sed 's/^\.//')
-          
-          echo "FULL_DOMAIN=${{ inputs.subdomain }}.${{ inputs.domain }}" >> $GITHUB_ENV
-          echo "REPO_NAME=${REPO_NAME}" >> $GITHUB_ENV
-          echo "✓ Repo Name: ${REPO_NAME}"
+          SUBDOMAIN="${{ inputs.subdomain }}"
+          DOMAIN="${{ inputs.domain }}"
+          FULL_DOMAIN="${SUBDOMAIN}.${DOMAIN}"
+          DOMAIN_REV=$(echo "${DOMAIN}" | awk -F. '{for(i=NF;i>0;i--) printf "%s%s", $i, (i>1?"." : "")}')
+          REPO_NAME="${DOMAIN_REV}.${SUBDOMAIN}"
+          echo "full_domain=${FULL_DOMAIN}" >> $GITHUB_OUTPUT
+          echo "repo_name=${REPO_NAME}" >> $GITHUB_OUTPUT
+          echo "subdomain=${SUBDOMAIN}" >> $GITHUB_OUTPUT
+          echo "domain=${DOMAIN}" >> $GITHUB_OUTPUT
 
-      - name: 1️⃣ Erstelle GitHub Repo
+      - name: "1️⃣ Create Repo"
+        continue-on-error: true
         run: |
-          curl -s -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/user/repos \
-            -d "{
-              \"name\": \"${{ env.REPO_NAME }}\",
-              \"description\": \"GitHub Pages für ${{ env.FULL_DOMAIN }}\",
-              \"homepage\": \"https://${{ env.FULL_DOMAIN }}\",
-              \"private\": false
-            }"
+          curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github.v3+json" https://api.github.com/user/repos -d "{\"name\":\"${{ steps.setup.outputs.repo_name }}\",\"description\":\"GitHub Pages für ${{ steps.setup.outputs.full_domain }}\",\"private\":false}"
 
-      - name: ⏳ Warte
+      - name: "⏳" 
         run: sleep 5
 
-      - name: 2️⃣ Aktiviere GitHub Pages
+      - name: "2️⃣ Enable Pages"
+        continue-on-error: true
         run: |
-          curl -s -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/wbgrds/${{ env.REPO_NAME }}/pages \
-            -d "{
-              \"source\": {
-                \"branch\": \"main\",
-                \"path\": \"/\"
-              }
-            }"
+          curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/wbgrds/${{ steps.setup.outputs.repo_name }}/pages -d "{\"source\":{\"branch\":\"main\"}}"
 
-      - name: 3️⃣ Hole Hetzner Zone ID
-        id: zone
+      - name: "3️⃣ Hetzner Zone"
+        id: htz
         run: |
-          RESPONSE=$(curl -s \
-            -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" \
-            "https://dns.hetzner.com/api/v1/zones?name=${{ inputs.domain }}")
-          
-          ZONE_ID=$(echo "$RESPONSE" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
-          echo "zone_id=$ZONE_ID" >> $GITHUB_OUTPUT
+          Z=$(curl -s -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" "https://dns.hetzner.com/api/v1/zones?name=${{ steps.setup.outputs.domain }}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+          echo "zone=${Z}" >> $GITHUB_OUTPUT
 
-      - name: 4️⃣ Setze Hetzner CNAME
+      - name: "4️⃣ CNAME"
         run: |
-          curl -s -X POST \
-            -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            https://dns.hetzner.com/api/v1/records \
-            -d "{
-              \"type\": \"CNAME\",
-              \"name\": \"${{ inputs.subdomain }}\",
-              \"value\": \"wbgrds.github.io\",
-              \"zone_id\": \"${{ steps.zone.outputs.zone_id }}\",
-              \"ttl\": 3600
-            }"
+          curl -s -X POST -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" -H "Content-Type: application/json" https://dns.hetzner.com/api/v1/records -d "{\"type\":\"CNAME\",\"name\":\"${{ steps.setup.outputs.subdomain }}\",\"value\":\"wbgrds.github.io\",\"zone_id\":\"${{ steps.htz.outputs.zone }}\",\"ttl\":3600}"
 
-      - name: ⏳ Warte
+      - name: "⏳"
         run: sleep 5
 
-      - name: 5️⃣ Klone Repo
+      - name: "5️⃣ Clone"
         run: |
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/wbgrds/${{ env.REPO_NAME }}.git deploy
-          cd deploy
-          git config user.email "claude@wbgrds.de"
-          git config user.name "Claude"
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/wbgrds/${{ steps.setup.outputs.repo_name }}.git deploy && cd deploy && git config user.email "auto@wbgrds.de" && git config user.name "Bot"
 
-      - name: 6️⃣ Erstelle Seite
+      - name: "6️⃣ Files"
         run: |
-          cd deploy
-          
-          cat > index.html << 'HTML'
-          <!DOCTYPE html>
-          <html lang="de">
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>Willkommen</title>
-              <style>
-                  * { margin: 0; padding: 0; box-sizing: border-box; }
-                  body { font-family: system-ui; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
-                  .container { background: white; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); padding: 40px; max-width: 600px; text-align: center; }
-                  h1 { color: #333; margin-bottom: 10px; }
-                  .domain { font-size: 14px; color: #999; font-family: monospace; margin-bottom: 20px; }
-                  p { color: #666; line-height: 1.6; margin-bottom: 30px; }
-                  .status { background: #f0f0f0; padding: 15px; border-radius: 5px; font-size: 12px; color: #666; }
-              </style>
-          </head>
-          <body>
-              <div class="container">
-                  <h1>✨ Bereit</h1>
-                  <div class="domain" id="domain">${{ env.FULL_DOMAIN }}</div>
-                  <p>GitHub Pages aktiv</p>
-                  <div class="status">
-                      ✓ Repo erstellt<br>
-                      ✓ Pages aktiviert<br>
-                      ✓ DNS konfiguriert
-                  </div>
-              </div>
-          </body>
-          </html>
+          cd deploy && echo "${{ steps.setup.outputs.full_domain }}" > CNAME && echo "# ${{ steps.setup.outputs.full_domain }}" > README.md && cat > index.html << 'HTML'
+          <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>${{ steps.setup.outputs.full_domain }}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}.c{background:white;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.15);padding:50px;max-width:500px;text-align:center}h1{font-size:32px;color:#333;margin-bottom:15px}.d{color:#999;font-family:monospace;margin:30px 0;font-size:13px}.s{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-top:30px;text-align:left;font-size:13px;color:#666;line-height:1.8}</style></head><body><div class="c"><h1>✨ Bereit</h1><div class="d">${{ steps.setup.outputs.full_domain }}</div><div class="s">✓ Repo erstellt<br>✓ Pages aktiviert<br>✓ DNS konfiguriert</div></div></body></html>
           HTML
-          
-          echo "${{ env.FULL_DOMAIN }}" > CNAME
-          cat > README.md << 'README'
-          # ${{ env.FULL_DOMAIN }}
-          
-          GitHub Pages Site
-          
-          https://${{ env.FULL_DOMAIN }}
-          README
 
-      - name: 7️⃣ Push
+      - name: "7️⃣ Push"
         run: |
-          cd deploy
-          git add .
-          git commit -m "Initial: GitHub Pages setup"
-          git push -u origin main
+          cd deploy && git add . && git commit -m "🚀 Initial: GitHub Pages" && git push -u origin main
 
-      - name: ✅ Done
+      - name: "✅ Done"
         run: |
-          echo "✅ ${{ env.FULL_DOMAIN }}"
-          echo "Repo: https://github.com/wbgrds/${{ env.REPO_NAME }}"
+          echo "✓ ${{ steps.setup.outputs.full_domain }}"
+          echo "✓ https://github.com/wbgrds/${{ steps.setup.outputs.repo_name }}"
