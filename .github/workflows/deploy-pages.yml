@@ -1,0 +1,168 @@
+name: Deploy GitHub Pages + Hetzner DNS
+
+on:
+  workflow_dispatch:
+    inputs:
+      subdomain:
+        description: 'Subdomain (z.B. prototype)'
+        required: true
+        type: string
+      domain:
+        description: 'Domain (z.B. ob5.dev)'
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📋 Setup
+        run: |
+          echo "🚀 Deploy: ${{ inputs.subdomain }}.${{ inputs.domain }}"
+          echo "FULL_DOMAIN=${{ inputs.subdomain }}.${{ inputs.domain }}" >> $GITHUB_ENV
+          echo "REPO_NAME=${{ inputs.domain }}.${{ inputs.subdomain }}" >> $GITHUB_ENV
+
+      - name: 1️⃣ Erstelle GitHub Repo
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/user/repos \
+            -d "{
+              \"name\": \"${{ env.REPO_NAME }}\",
+              \"description\": \"GitHub Pages für ${{ env.FULL_DOMAIN }}\",
+              \"homepage\": \"https://${{ env.FULL_DOMAIN }}\",
+              \"private\": false
+            }"
+        continue-on-error: true
+
+      - name: 2️⃣ Aktiviere GitHub Pages
+        run: |
+          sleep 3
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/wbgrds/${{ env.REPO_NAME }}/pages \
+            -d "{
+              \"source\": {
+                \"branch\": \"main\",
+                \"path\": \"/\"
+              }
+            }"
+        continue-on-error: true
+
+      - name: 3️⃣ Hole Hetzner Zone ID
+        id: zone
+        run: |
+          RESPONSE=$(curl -s \
+            -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" \
+            "https://dns.hetzner.com/api/v1/zones?name=${{ inputs.domain }}")
+          
+          ZONE_ID=$(echo "$RESPONSE" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+          echo "zone_id=$ZONE_ID" >> $GITHUB_OUTPUT
+          echo "Zone ID: $ZONE_ID"
+
+      - name: 4️⃣ Setze Hetzner CNAME
+        run: |
+          curl -X POST \
+            -H "Auth-API-Token: ${{ secrets.HETZNER_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            https://dns.hetzner.com/api/v1/records \
+            -d "{
+              \"type\": \"CNAME\",
+              \"name\": \"${{ inputs.subdomain }}\",
+              \"value\": \"wbgrds.github.io\",
+              \"zone_id\": \"${{ steps.zone.outputs.zone_id }}\",
+              \"ttl\": 3600
+            }"
+
+      - name: 5️⃣ Klone neues Repo
+        run: |
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/wbgrds/${{ env.REPO_NAME }}.git deploy
+          cd deploy
+          git config user.email "claude@wbgrds.de"
+          git config user.name "Claude"
+
+      - name: 6️⃣ Erstelle Standard-Seite
+        run: |
+          cd deploy
+          
+          cat > index.html << 'HTML'
+          <!DOCTYPE html>
+          <html lang="de">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Willkommen</title>
+              <style>
+                  * { margin: 0; padding: 0; box-sizing: border-box; }
+                  body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      min-height: 100vh;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      padding: 20px;
+                  }
+                  .container {
+                      background: white;
+                      border-radius: 10px;
+                      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+                      padding: 40px;
+                      max-width: 600px;
+                      text-align: center;
+                  }
+                  h1 { color: #333; margin-bottom: 10px; }
+                  .domain { font-size: 14px; color: #999; font-family: monospace; margin-bottom: 20px; }
+                  p { color: #666; line-height: 1.6; margin-bottom: 30px; }
+                  .status { background: #f0f0f0; padding: 15px; border-radius: 5px; margin-top: 20px; font-size: 12px; color: #666; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>✨ Bereit</h1>
+                  <div class="domain" id="domain">www.example.de</div>
+                  <p>GitHub Pages ist aktiv und bereit zum Anpassen.</p>
+                  <div class="status">
+                      ✓ GitHub Repo erstellt<br>
+                      ✓ GitHub Pages aktiviert<br>
+                      ✓ DNS konfiguriert
+                  </div>
+              </div>
+              <script>
+                  document.getElementById('domain').textContent = window.location.hostname;
+              </script>
+          </body>
+          </html>
+          HTML
+          
+          echo "${{ env.FULL_DOMAIN }}" > CNAME
+          
+          cat > README.md << 'README'
+          # ${{ env.FULL_DOMAIN }}
+          
+          GitHub Pages Site
+          
+          ## Deploy
+          Einfach auf `main` pushen.
+          
+          ## Zugriff
+          https://${{ env.FULL_DOMAIN }}
+          README
+
+      - name: 7️⃣ Commit & Push
+        run: |
+          cd deploy
+          git add .
+          git commit -m "Initial commit: GitHub Pages setup"
+          git push -u origin main
+
+      - name: ✅ Fertig
+        run: |
+          echo "Domain:    ${{ env.FULL_DOMAIN }}"
+          echo "Repo:      https://github.com/wbgrds/${{ env.REPO_NAME }}"
+          echo "Live:      https://${{ env.FULL_DOMAIN }} (DNS kann 5-10min dauern)"
